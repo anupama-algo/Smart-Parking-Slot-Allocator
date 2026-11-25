@@ -2,7 +2,8 @@
 -- PROJECT      : SMART PARKING SLOT ALLOCATOR
 -- DATABASE     : smart_parking_db
 -- TECHNOLOGY   : MySQL 8.0
--- PURPOSE      : Database creation, structure and verification
+-- PURPOSE      : Database creation, table structure,
+--                constraints and verification
 -- ============================================================
 
 
@@ -14,7 +15,7 @@ CREATE DATABASE IF NOT EXISTS smart_parking_db;
 
 USE smart_parking_db;
 
--- Verify the selected database.
+-- Verify selected database
 SELECT DATABASE();
 
 
@@ -24,7 +25,7 @@ SELECT DATABASE();
 
 
 -- 2.1 PARKING AREAS
--- Stores information about individual parking areas.
+-- Stores individual parking area information.
 
 CREATE TABLE IF NOT EXISTS parking_areas (
     area_id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -42,7 +43,9 @@ CREATE TABLE IF NOT EXISTS parking_slots (
     slot_id BIGINT AUTO_INCREMENT PRIMARY KEY,
     area_id BIGINT NOT NULL,
     slot_number INT NOT NULL,
+
     vehicle_category ENUM('CAR', 'BIKE') NOT NULL,
+
     slot_status ENUM('AVAILABLE', 'OCCUPIED')
         NOT NULL DEFAULT 'AVAILABLE',
 
@@ -52,6 +55,7 @@ CREATE TABLE IF NOT EXISTS parking_slots (
 
     CONSTRAINT uq_area_slot
         UNIQUE (area_id, slot_number)
+
 ) ENGINE=InnoDB;
 
 
@@ -61,24 +65,30 @@ CREATE TABLE IF NOT EXISTS parking_slots (
 CREATE TABLE IF NOT EXISTS vehicles (
     vehicle_id BIGINT AUTO_INCREMENT PRIMARY KEY,
     vehicle_number VARCHAR(20) NOT NULL UNIQUE,
+
     vehicle_category ENUM('CAR', 'BIKE') NOT NULL,
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
 ) ENGINE=InnoDB;
 
 
 -- 2.4 PARKING SESSIONS
--- Stores vehicle entry, exit, duration and parking fee details.
+-- Stores vehicle entry, exit, duration and fee details.
 
 CREATE TABLE IF NOT EXISTS parking_sessions (
     session_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+
     vehicle_id BIGINT NOT NULL,
     slot_id BIGINT NOT NULL,
+
     entry_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     exit_time DATETIME NULL,
+
     duration_minutes BIGINT NULL,
     parking_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00,
 
-    -- Prevents multiple active sessions for the same vehicle.
+    -- Prevent multiple active sessions for one vehicle.
     active_vehicle_id BIGINT
         GENERATED ALWAYS AS (
             CASE
@@ -87,7 +97,7 @@ CREATE TABLE IF NOT EXISTS parking_sessions (
             END
         ) STORED,
 
-    -- Prevents multiple active assignments to the same slot.
+    -- Prevent multiple active assignments to one slot.
     active_slot_id BIGINT
         GENERATED ALWAYS AS (
             CASE
@@ -112,6 +122,7 @@ CREATE TABLE IF NOT EXISTS parking_sessions (
 
     INDEX idx_session_entry_time (entry_time),
     INDEX idx_session_exit_time (exit_time)
+
 ) ENGINE=InnoDB;
 
 
@@ -119,15 +130,18 @@ CREATE TABLE IF NOT EXISTS parking_sessions (
 -- SECTION 3: DATABASE STRUCTURE VERIFICATION
 -- ============================================================
 
--- Display all database tables.
+-- Display all tables.
 
 SHOW TABLES;
 
--- Inspect table structures.
+-- Inspect individual table structures.
 
 DESCRIBE parking_areas;
+
 DESCRIBE parking_slots;
+
 DESCRIBE vehicles;
+
 DESCRIBE parking_sessions;
 
 
@@ -135,12 +149,18 @@ DESCRIBE parking_sessions;
 -- SECTION 4: PARKING AREA AND SLOT VERIFICATION
 -- ============================================================
 
+
 -- 4.1 Overall parking occupancy.
 
 SELECT
     COUNT(*) AS total_slots,
-    SUM(slot_status = 'OCCUPIED') AS occupied_slots,
-    SUM(slot_status = 'AVAILABLE') AS available_slots
+
+    SUM(slot_status = 'OCCUPIED')
+        AS occupied_slots,
+
+    SUM(slot_status = 'AVAILABLE')
+        AS available_slots
+
 FROM parking_slots;
 
 
@@ -149,10 +169,15 @@ FROM parking_slots;
 SELECT
     pa.area_name,
     COUNT(ps.slot_id) AS total_slots
+
 FROM parking_areas pa
+
 LEFT JOIN parking_slots ps
     ON pa.area_id = ps.area_id
-GROUP BY pa.area_id, pa.area_name;
+
+GROUP BY
+    pa.area_id,
+    pa.area_name;
 
 
 -- 4.3 Complete parking slot inventory.
@@ -163,27 +188,69 @@ SELECT
     ps.slot_number,
     ps.vehicle_category,
     ps.slot_status
+
 FROM parking_slots ps
+
 JOIN parking_areas pa
     ON ps.area_id = pa.area_id
-ORDER BY pa.area_id, ps.slot_number;
+
+ORDER BY
+    pa.area_id,
+    ps.slot_number;
+
+
+-- 4.4 Parking availability by area and vehicle category.
+
+SELECT
+    pa.area_name,
+    s.vehicle_category,
+
+    COUNT(*) AS total_slots,
+
+    SUM(
+        CASE
+            WHEN s.slot_status = 'AVAILABLE' THEN 1
+            ELSE 0
+        END
+    ) AS available_slots
+
+FROM parking_areas pa
+
+JOIN parking_slots s
+    ON pa.area_id = s.area_id
+
+GROUP BY
+    pa.area_id,
+    pa.area_name,
+    s.vehicle_category
+
+ORDER BY
+    pa.area_id,
+    s.vehicle_category;
 
 
 -- ============================================================
 -- SECTION 5: VEHICLE AND PARKING SESSION VERIFICATION
 -- ============================================================
 
+
 -- 5.1 Check active sessions for a particular vehicle.
 
 SELECT
     v.vehicle_number,
     COUNT(ps.session_id) AS active_sessions
+
 FROM parking_sessions ps
+
 JOIN vehicles v
     ON ps.vehicle_id = v.vehicle_id
-WHERE v.vehicle_number = 'PB10AB1234'
-  AND ps.exit_time IS NULL
-GROUP BY v.vehicle_number;
+
+WHERE
+    v.vehicle_number = 'PB10AB1234'
+    AND ps.exit_time IS NULL
+
+GROUP BY
+    v.vehicle_number;
 
 
 -- 5.2 Display recent parking session records.
@@ -194,19 +261,46 @@ SELECT
     ps.exit_time,
     ps.duration_minutes,
     ps.parking_fee
+
 FROM parking_sessions ps
+
 JOIN vehicles v
     ON ps.vehicle_id = v.vehicle_id
-ORDER BY ps.session_id DESC
+
+ORDER BY
+    ps.session_id DESC
+
 LIMIT 10;
+
+
+-- 5.3 Display all currently active parking sessions.
+
+SELECT
+    ps.session_id,
+    v.vehicle_number,
+    ps.slot_id,
+    ps.entry_time,
+    pa.area_name
+
+FROM parking_sessions ps
+
+JOIN vehicles v
+    ON ps.vehicle_id = v.vehicle_id
+
+JOIN parking_slots s
+    ON ps.slot_id = s.slot_id
+
+JOIN parking_areas pa
+    ON s.area_id = pa.area_id
+
+WHERE ps.exit_time IS NULL;
 
 
 -- ============================================================
 -- SECTION 6: PARKING FEE VERIFICATION
 -- ============================================================
 
--- Display the parking session and fee details
--- for the BIKE billing test.
+-- Display the BIKE billing test session details.
 
 SELECT
     v.vehicle_number,
@@ -214,18 +308,135 @@ SELECT
     ps.exit_time,
     ps.duration_minutes,
     ps.parking_fee
+
 FROM parking_sessions ps
+
 JOIN vehicles v
     ON ps.vehicle_id = v.vehicle_id
+
 WHERE v.vehicle_number = 'PB10BIKE01'
-ORDER BY ps.session_id DESC;
+
+ORDER BY
+    ps.session_id DESC;
 
 
 -- ============================================================
--- SECTION 7: TESTING OPERATION
--- IMPORTANT: THIS QUERY MODIFIES DATABASE RECORDS.
--- It was used to simulate a 61-minute parking duration.
--- DO NOT EXECUTE AGAIN as part of normal verification.
+-- SECTION 7: PARKING AREA HISTORY AND REPORTS
+-- ============================================================
+
+
+-- 7.1 Display parking areas.
+
+SELECT *
+FROM parking_areas;
+
+
+-- 7.2 Display parking slots.
+
+SELECT *
+FROM parking_slots;
+
+
+-- 7.3 Display parking session history for area ID 2.
+
+SELECT
+    ps.session_id,
+    v.vehicle_number,
+    ps.slot_id,
+    ps.entry_time,
+    ps.exit_time,
+    ps.parking_fee
+
+FROM parking_sessions ps
+
+JOIN vehicles v
+    ON ps.vehicle_id = v.vehicle_id
+
+JOIN parking_slots s
+    ON ps.slot_id = s.slot_id
+
+WHERE s.area_id = 2
+
+ORDER BY
+    ps.entry_time;
+
+
+-- 7.4 Summary report for area ID 2.
+
+SELECT
+    pa.area_id,
+    pa.area_code,
+    pa.area_name,
+
+    COUNT(DISTINCT s.slot_id) AS total_slots,
+
+    COUNT(DISTINCT ps.session_id) AS total_sessions
+
+FROM parking_areas pa
+
+LEFT JOIN parking_slots s
+    ON pa.area_id = s.area_id
+
+LEFT JOIN parking_sessions ps
+    ON s.slot_id = ps.slot_id
+
+WHERE pa.area_id = 2
+
+GROUP BY
+    pa.area_id,
+    pa.area_code,
+    pa.area_name;
+
+
+-- ============================================================
+-- SECTION 8: FOREIGN KEY VERIFICATION
+-- ============================================================
+
+SELECT
+    TABLE_NAME,
+    COLUMN_NAME,
+    REFERENCED_TABLE_NAME,
+    REFERENCED_COLUMN_NAME
+
+FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+
+WHERE
+    TABLE_SCHEMA = 'smart_parking_db'
+    AND REFERENCED_TABLE_NAME IS NOT NULL
+
+ORDER BY
+    TABLE_NAME,
+    COLUMN_NAME;
+
+
+-- ============================================================
+-- SECTION 9: FINAL DATABASE VERIFICATION
+-- ============================================================
+
+-- Verify selected database.
+
+SELECT DATABASE();
+
+
+-- Display final parking area information.
+
+SELECT
+    area_id,
+    area_code,
+    area_name,
+    location
+
+FROM parking_areas
+
+ORDER BY
+    area_id;
+
+
+-- ============================================================
+-- SECTION 10: OPTIONAL TESTING OPERATION
+-- IMPORTANT: DO NOT UNCOMMENT OR EXECUTE DURING NORMAL
+-- DATABASE SETUP OR VERIFICATION.
+-- This operation changes an existing parking session.
 -- ============================================================
 
 -- UPDATE parking_sessions ps
@@ -239,3 +450,4 @@ ORDER BY ps.session_id DESC;
 -- ============================================================
 -- END OF SMART PARKING SLOT ALLOCATOR SQL SCRIPT
 -- ============================================================
+
